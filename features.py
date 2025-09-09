@@ -210,9 +210,7 @@ def plot(features, ts, ax=None):
     return ax
 
 
-
-
-def load_feats(audio_path, feat_type='mfcc', output_dir='/scratch/qx244/data/salami/feats', recompute=False):
+def load_feats(audio_path, feat_type='mfcc', cache_dir='/scratch/qx244/data/salami/feats', recompute=False):
     aval_feats = {
         'yamnet': yamnet_emb,
         'openl3': openl3_emb,
@@ -221,11 +219,27 @@ def load_feats(audio_path, feat_type='mfcc', output_dir='/scratch/qx244/data/sal
         'tempogram': tempogram
     }
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(cache_dir, exist_ok=True)
     track_bn = get_track_basename(audio_path)
-    feat_path = os.path.join(output_dir, f'{track_bn}_{feat_type}.npz')
+    feat_path = os.path.join(cache_dir, f'{track_bn}_{feat_type}.npz')
     
     if recompute or not os.path.exists(feat_path):
         feat, ts = aval_feats[feat_type](audio_path)
         np.savez(feat_path, feature=feat, ts=ts)
     return np.load(feat_path)
+
+
+def load_synced_feats(audio_path, cache_dir='/scratch/qx244/data/salami/feats', resync=False):
+    os.makedirs(cache_dir, exist_ok=True)
+    track_bn = get_track_basename(audio_path)
+    out_path = os.path.join(cache_dir, f'{track_bn}_synced_feats.npz')
+
+    if resync or not os.path.exists(out_path):
+        beats = get_beats(audio_path)
+        synced_feats = {'bs': beats}
+        for feat_type in ['mfcc', 'tempogram', 'yamnet', 'openl3', 'crema']:
+            f, ts = load_feats(audio_path, feat_type, cache_dir)
+            synced_feat = beat_sync_features(f, ts, beats)
+            synced_feats[feat_type] = synced_feat
+        np.savez(out_path, **synced_feats)
+    return np.load(out_path)

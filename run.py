@@ -1,13 +1,14 @@
 import bnl
 import features as ft
 import random
+from tqdm import tqdm
 
 if __name__ == '__main__':
     slm_ds = bnl.Dataset("/scratch/qx244/data/salami/metadata.csv")
     tids = slm_ds.track_ids
     random.shuffle(tids)
 
-    for tid in tids:
+    for tid in tqdm(tids):
         audio_path = slm_ds[tid].info['audio_mp3_path']
         try:
             ft.load_synced_feats(audio_path)

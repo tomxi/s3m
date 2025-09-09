@@ -167,9 +167,9 @@ def tempogram(audio_path):
     y, sr = cached_load_audio(audio_path, 22050)
     tempogram = librosa.feature.tempogram(
         y=y, sr=sr, 
-        hop_length=512, win_length=384, center=True
+        hop_length=1024, win_length=384, center=True
     )
-    ts = librosa.times_like(tempogram, sr=sr, hop_length=512)
+    ts = librosa.times_like(tempogram, sr=sr, hop_length=1024)
     return tempogram, ts
 
 # endregion

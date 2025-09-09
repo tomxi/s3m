@@ -35,7 +35,7 @@ def clear_gpu_memory():
 
 
 @lru_cache(maxsize=1)
-def load_yamnet_model(model_dir: str = '/Users/tomxi/code/yamnet_model'):
+def load_yamnet_model(model_dir: str = '/scratch/qx244/models/yamnet'):
     return tf.saved_model.load(model_dir)
 
 
@@ -136,19 +136,6 @@ def beat_sync_features(features, ts, beats, upsample_sr=20):
 
 # region: Feature Extraction
 
-# def compute_and_sync_feature(audio_path, output_dir, feature_name, beats_dir, recompute, compute_fn):
-#     os.makedirs(output_dir, exist_ok=True)
-#     track_bn = get_track_basename(audio_path)
-#     feat_path = os.path.join(output_dir, f'{track_bn}_{feature_name}.npz')
-    
-#     if recompute or not os.path.exists(feat_path):
-#         feat, emb_sr = compute_fn(audio_path)
-#         track_beats = adjusted_beats(audio_path, beats_dir, recompute)['adjusted_beats']
-#         feat_sync, feat_boundaries = beat_sync(feat, track_beats, emb_sr)
-#         np.savez(feat_path, feature=feat_sync, ts=feat_boundaries)
-#     return np.load(feat_path)
-
-
 def yamnet_emb(audio_path):
     yamnet_model = load_yamnet_model()
     audio, sr = cached_load_audio(audio_path, 16000)
@@ -169,7 +156,7 @@ def openl3_emb(audio_path):
     return emb.T, ts
 
 
-def crema_emb(audio_path, device='cpu'):
+def crema_emb(audio_path, device='GPU'):
     with tf.device(device):
         chord_model = load_crema_model()
         crema_out = chord_model.outputs(filename=str(audio_path))
@@ -223,34 +210,22 @@ def plot(features, ts, ax=None):
     return ax
 
 
-## Deprecated ##
-def consolidate_features(audio_path, output_dir='feats', reconsolidate=False):
-    track_bn = get_track_basename(audio_path)
-    outpath = os.path.join(output_dir, f'{track_bn}_feats.npz')
-    
-    if reconsolidate or not os.path.exists(outpath):
-        raw_feats = dict(
-            yamnet = yamnet_emb(audio_path),
-            openl3 = openl3_emb(audio_path),
-            crema = crema_emb(audio_path),
-            mfcc = mfcc(audio_path),
-            tempogram = tempogram(audio_path)
-        )
 
-        # get the union of all the sets in feat_ts, since the features are on different time_grids
-        feat_ts_sets = [set(raw_feats[f]['ts']) for f in raw_feats]
-        common_ts = set.intersection(*feat_ts_sets)
-        common_ts = np.array(sorted(common_ts))
-        synced_feats = dict(ts=common_ts)
-        for feat in raw_feats:
-            frame_indices = np.searchsorted(raw_feats[feat]['ts'], common_ts)
-            synced_feats[feat] = librosa.util.sync(raw_feats[feat]['feature'], frame_indices, aggregate=np.median, pad=False)
-            if synced_feats[feat].shape[1] != (len(common_ts) - 1):
-                raise ValueError(
-                    "Feature synchronization shape mismatch!" + \
-                    f"{synced_feats[feat].shape[1]} != {len(common_ts)} - 1"
-                )
-        os.makedirs(output_dir, exist_ok=True)
-        np.savez(outpath, **synced_feats)
-    return np.load(outpath)
+
+def load_feats(audio_path, feat_type='mfcc', output_dir='/scratch/qx244/data/salami/feats', recompute=False):
+    aval_feats = {
+        'yamnet': yamnet_emb,
+        'openl3': openl3_emb,
+        'crema': crema_emb,
+        'mfcc': mfcc,
+        'tempogram': tempogram
+    }
+
+    os.makedirs(output_dir, exist_ok=True)
+    track_bn = get_track_basename(audio_path)
+    feat_path = os.path.join(output_dir, f'{track_bn}_{feat_type}.npz')
     
+    if recompute or not os.path.exists(feat_path):
+        feat, ts = aval_feats[feat_type](audio_path)
+        np.savez(feat_path, feature=feat, ts=ts)
+    return np.load(feat_path)

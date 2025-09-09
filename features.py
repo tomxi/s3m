@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import torch
 import tensorflow as tf
 import librosa
 import gc
@@ -14,21 +13,8 @@ from scipy.interpolate import interp1d
 from functools import lru_cache
 
 # region: Model and Audio Loading
-
-def torch_device_default():
-    if torch.cuda.is_available():
-        return "cuda:0"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
-
 def clear_gpu_memory():
-    """Clear GPU memory for both PyTorch and TensorFlow"""
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    elif torch.backends.mps.is_available():
-        torch.mps.empty_cache()
-    
+    """Clear GPU memory for TensorFlow"""
     # Clear TensorFlow memory
     tf.keras.backend.clear_session()
     gc.collect()
@@ -51,10 +37,10 @@ def load_crema_model():
     return crema.models.chord.ChordModel()
 
 
-
 @lru_cache(maxsize=32)
 def cached_load_audio(audio_path, sr):
     return librosa.load(str(audio_path), sr=sr)
+
 
 def get_track_basename(audio_path):
     track_bn = os.path.basename(audio_path).split('.')[0]
@@ -238,8 +224,8 @@ def load_synced_feats(audio_path, cache_dir='/scratch/qx244/data/salami/feats', 
         beats = get_beats(audio_path)
         synced_feats = {'bs': beats}
         for feat_type in ['mfcc', 'tempogram', 'yamnet', 'openl3', 'crema']:
-            f, ts = load_feats(audio_path, feat_type, cache_dir)
-            synced_feat = beat_sync_features(f, ts, beats)
+            f_npz = load_feats(audio_path, feat_type, cache_dir)
+            synced_feat = beat_sync_features(f_npz['feature'], f_npz['ts'], beats)
             synced_feats[feat_type] = synced_feat
         np.savez(out_path, **synced_feats)
     return np.load(out_path)

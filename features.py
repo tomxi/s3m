@@ -1,12 +1,7 @@
 import os
 import numpy as np
-import tensorflow as tf
 import librosa
-import gc
 import librosa.display
-import openl3
-import openl3.models
-import crema
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -14,6 +9,8 @@ from functools import lru_cache
 
 # region: Model and Audio Loading
 def clear_gpu_memory():
+    import tensorflow as tf
+    import gc
     """Clear GPU memory for TensorFlow"""
     # Clear TensorFlow memory
     tf.keras.backend.clear_session()
@@ -22,11 +19,13 @@ def clear_gpu_memory():
 
 @lru_cache(maxsize=1)
 def load_yamnet_model(model_dir: str = '/scratch/qx244/models/yamnet'):
+    import tensorflow as tf
     return tf.saved_model.load(model_dir)
 
 
 @lru_cache(maxsize=1)
 def load_openl3_model():
+    import openl3.models
     return openl3.models.load_audio_embedding_model(
         'mel256', 'music', 512, frontend='kapre'
     )
@@ -34,6 +33,7 @@ def load_openl3_model():
 
 @lru_cache(maxsize=1)
 def load_crema_model():
+    import crema
     return crema.models.chord.ChordModel()
 
 
@@ -133,6 +133,7 @@ def yamnet_emb(audio_path):
 
 
 def openl3_emb(audio_path):
+    import openl3
     openl3_model = load_openl3_model()
     y, sr = cached_load_audio(audio_path, 22050)
     emb, ts = openl3.get_audio_embedding(
@@ -143,6 +144,7 @@ def openl3_emb(audio_path):
 
 
 def crema_emb(audio_path, device='GPU'):
+    import tensorflow as tf
     with tf.device(device):
         chord_model = load_crema_model()
         crema_out = chord_model.outputs(filename=str(audio_path))

@@ -1,10 +1,6 @@
 import os
 import numpy as np
 import librosa
-import librosa.display
-import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d
-
 from functools import lru_cache
 
 # region: Model and Audio Loading
@@ -89,6 +85,7 @@ def beat_sync_features(features, ts, beats, upsample_sr=20):
     interpolation.
     Assumes features is a 2D array with time as the last axis.
     """
+    from scipy.interpolate import interp1d
     duration = beats[-1]
     target_ts = np.linspace(0, duration, num=int(duration * upsample_sr))
 
@@ -177,6 +174,8 @@ def tempogram(audio_path):
 # endregion
 
 def plot(features, ts, ax=None):
+    import matplotlib.pyplot as plt
+    import librosa.display
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 4))
     else:

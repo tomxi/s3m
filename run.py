@@ -11,8 +11,8 @@ if __name__ == '__main__':
 
     lsd_configs = {
         'rep_width': 5,
-        'rec_smooth': 7,
-        'evec_smooth': 9,
+        'rec_smooth': 9,
+        'evec_smooth': 11,
         'delay_steps': 4,
     }
 
@@ -26,5 +26,6 @@ if __name__ == '__main__':
         try:
             scores = exp.all_feat_combo_scores(slm_ds[tid], lsd_configs)
             scores.to_feather(score_path)
+            print(f"Successfully computed scores for {tid}")
         except Exception as e:
             print(f"Failed to compute scores for {tid}: {e}")

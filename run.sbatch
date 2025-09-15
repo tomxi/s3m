@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=rel_test
+#SBATCH --job-name=rel
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=16G
-#SBATCH --time=2:00:00
-#SBATCH --array=1-2
-#SBATCH --output=rel_test.out
-#SBATCH --error=rel_test.err
+#SBATCH --time=8:00:00
+#SBATCH --array=1-20
+#SBATCH --output=rel.out
+#SBATCH --error=rel.err
 
 singularity exec \
     --overlay /scratch/qx244/envs/amd-overlay.ext3:ro \

@@ -11,7 +11,16 @@ import itertools
 from pqdm.processes import pqdm
 from mpl_toolkits.axes_grid1 import ImageGrid
 
-SLM_DIR = "/scratch/qx244/data/salami"
+SLM_DIR = "/Users/tomxi/data/salami"
+
+DEFAULT_LSD_CONFIGS = {
+    'rep_width': 5, 
+    'rec_smooth': 9, 
+    'evec_smooth': 11, 
+    'delay_steps': 4,
+    'rep_feat': 'openl3',
+    'loc_feat': 'mfcc',
+}
 
 def get_small_set(size=10, seed=42):
     slm_ds = bnl.Dataset(os.path.join(SLM_DIR, "metadata.csv"))
@@ -35,10 +44,12 @@ def serialize_ms(ms):
     return {'itvls': itvls_json, 'labels': ms.labels}
 
 
-def get_est_raw(track, lsd_configs, recompute=False):
+def get_est_raw(track, lsd_configs_update=dict(), recompute=False):
     cache_dir = os.path.join(SLM_DIR, 'lsd')
+    config_copy = DEFAULT_LSD_CONFIGS.copy()
+    config_copy.update(lsd_configs_update)
     os.makedirs(cache_dir, exist_ok=True)
-    est_name = f'{track.track_id}_{lsd_option_to_str(lsd_configs)}'
+    est_name = f'{track.track_id}_{lsd_option_to_str(config_copy)}'
     cache_path = os.path.join(
         cache_dir, 
         f'{est_name}.json'
@@ -46,13 +57,13 @@ def get_est_raw(track, lsd_configs, recompute=False):
 
     if recompute or not os.path.exists(cache_path):
         est_raw = (
-            bnl.MS.from_itvls(*lsd.run(track.feats, **lsd_configs))
+            bnl.MS.from_itvls(*lsd.run(track.feats, **config_copy))
             .prune_layers()
             .relabel()
         )
         result = {'track_id': track.track_id}
         result.update(serialize_ms(est_raw))
-        result.update(lsd_configs)
+        result.update(config_copy)
         with open(cache_path, 'w') as f:
             json.dump(result, f, indent=2)
         print(f"\nSuccessfully saved data to '{cache_path}'")
@@ -61,9 +72,11 @@ def get_est_raw(track, lsd_configs, recompute=False):
             result = json.load(f)
     return bnl.MS.from_itvls(result['itvls'], result['labels'], name=est_name)
 
-def get_scores(track, lsd_configs):
+def get_scores(track, lsd_configs=dict()):
     ref = track.ref.expand_labels()
-    est_raw = get_est_raw(track, lsd_configs).align(ref)
+    config_copy = DEFAULT_LSD_CONFIGS.copy()
+    config_copy.update(lsd_configs)
+    est_raw = get_est_raw(track, config_copy).align(ref)
     ref_bh = ref.contour('count').level()
     est_bh_raw = est_raw.contour('depth')
     est_bh_cleaned = est_raw.contour('prob').clean('kde', bw=0.8).level('mean_shift', bw=0.12)
@@ -91,12 +104,12 @@ def get_scores(track, lsd_configs):
     
     df = pd.DataFrame(data_for_df)
     df['track_id'] = track.track_id
-    df['rep_feat'] = lsd_configs['rep_feat']
-    df['loc_feat'] = lsd_configs['loc_feat']
-    df['rep_width'] = lsd_configs['rep_width']
-    df['rec_smooth'] = lsd_configs['rec_smooth']
-    df['evec_smooth'] = lsd_configs['evec_smooth']
-    df['delay_steps'] = lsd_configs['delay_steps']
+    df['rep_feat'] = config_copy['rep_feat']
+    df['loc_feat'] = config_copy['loc_feat']
+    df['rep_width'] = config_copy['rep_width']
+    df['rec_smooth'] = config_copy['rec_smooth']
+    df['evec_smooth'] = config_copy['evec_smooth']
+    df['delay_steps'] = config_copy['delay_steps']
     
     # long_df = df[['track_id', 'rep_feat', 'loc_feat', 'rep_width', 'rec_smooth', 'evec_smooth', 'delay_steps', 'score_type', 'prf', 'score']]
     return df.pivot_table(
@@ -105,16 +118,57 @@ def get_scores(track, lsd_configs):
         values='score'
     )
 
-def all_feat_combo_scores(track, lsd_configs):
+def all_feat_combo_scores(track, lsd_configs=dict()):
     available_feats = ['openl3', 'crema', 'mfcc', 'tempogram', 'yamnet']
-    
+    config_copy = DEFAULT_LSD_CONFIGS.copy()
+    config_copy.update(lsd_configs)
     all_scores = []
     for rep_feat in available_feats:
-        lsd_configs['rep_feat'] = rep_feat
+        config_copy['rep_feat'] = rep_feat
         for loc_feat in available_feats:
-            lsd_configs['loc_feat'] = loc_feat
-            all_scores.append(get_scores(track, lsd_configs))
+            config_copy['loc_feat'] = loc_feat
+            all_scores.append(get_scores(track, config_copy))
     return pd.concat(all_scores).reset_index()
+
+def load_scores(track):
+    audio_path = track.info['audio_mp3_path']
+    score_path = os.path.dirname(audio_path).replace('audio', 'scores') + '.feather'
+    return pd.read_feather(score_path)
+
+def adobe_scores(track):
+    ref = track.ref.expand_labels()
+    adobe_est = track.ests['mu1gamma9'].align(ref)
+    ref_bh = ref.contour('count').level()
+    adobe_bh = adobe_est.contour('prob').clean('kde', bw=0.8).level('mean_shift', bw=0.12)
+    cleaned_adobe_est = adobe_bh.to_ms('lam', ref_ms=adobe_est)
+    
+    raw_l_score = fle.lmeasure(ref.itvls, ref.labels, adobe_est.itvls, adobe_est.labels)
+    cleaned_b_score = bnl.metrics.bmeasure(ref_bh, adobe_bh, window=1.5)
+    cleaned_l_score = fle.lmeasure(ref.itvls, ref.labels, cleaned_adobe_est.itvls, cleaned_adobe_est.labels)
+
+    # collect prf
+    scores = {
+        'raw_l': raw_l_score,
+        'cleaned_b': (cleaned_b_score['b_p'], cleaned_b_score['b_r'], cleaned_b_score['b_f']),
+        'cleaned_l': cleaned_l_score
+    }
+
+    # Transform to long format
+    data_for_df = []
+    for score_name, (p, r, f) in scores.items():
+        data_for_df.append({'score_type': score_name, 'prf': 'p', 'score': p})
+        data_for_df.append({'score_type': score_name, 'prf': 'r', 'score': r})
+        data_for_df.append({'score_type': score_name, 'prf': 'f', 'score': f})
+    
+    df = pd.DataFrame(data_for_df)
+    df['track_id'] = track.track_id
+    
+    return df.pivot_table(
+        index=['track_id', 'prf'], 
+        columns='score_type', 
+        values='score'
+    )
+    
 
 def plot_scores(score_df, prf='f', score_type='cleaned_b', ax=None, vmin=None, vmax=None, cbar=True, show_ylabel=True):
     filtered_df = score_df[score_df.prf == prf]
@@ -185,6 +239,23 @@ def plot_all_scores(score_df, prf='f', figsize=(11,5)):
     fig.suptitle('Comparison of Score Types (F-score)', fontsize=16, y=0.88)
     return fig
 
+
+def pick_combo(scores_df, prf='f'):
+    mean_over_tracks = (
+        scores_df[scores_df.prf == prf]
+        .groupby(['rep_feat', 'loc_feat'])
+        .mean(numeric_only=True)
+        .drop(columns=['rep_width', 'rec_smooth', 'evec_smooth', 'delay_steps'])
+    )
+    best_pairs = mean_over_tracks.idxmax()
+    b_rep, b_loc = best_pairs['cleaned_b']
+    l_rep, l_loc = best_pairs['raw_l']
+    return {
+        'b': {'rep_feat': b_rep, 'loc_feat': b_loc}, 
+        'l': {'rep_feat': l_rep, 'loc_feat': l_loc}, 
+        'mix': {'rep_feat': l_rep, 'loc_feat': b_loc}
+    }
+    
 
 def lsd_config_selection_experiment():
     """ Search over a small grid of lsd_configs and save the results for analysis. """

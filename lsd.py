@@ -68,7 +68,7 @@ def segment_embedding(evecs, Cnorm, k):
 
 def run(
     feats, rep_feat='openl3', loc_feat='mfcc', depth=16, 
-    rep_width=5, rec_smooth=11, evec_smooth=13, delay_steps=5,
+    rep_width=5, rec_smooth=9, evec_smooth=11, delay_steps=4,
 ):
     from mir_eval.util import boundaries_to_intervals
     # time delay embeddings
